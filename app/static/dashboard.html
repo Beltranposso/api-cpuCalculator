@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CPU Monitor — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Bebas+Neue&display=swap');
+:root{
+  --bg:#07080a;--surf:#111418;--surf2:#181c22;--bdr:#1f2530;--bdr2:#2a3040;
+  --amber:#f5a623;--amber-d:#b87a1a;--cyan:#3de8d4;--green:#00d68f;
+  --red:#ff4560;--muted:#3d4a5c;--text:#c8d3e0;--mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;display:flex;flex-direction:column}
+
+/* ── Header ── */
+header{
+  border-bottom:1px solid var(--bdr);padding:12px 20px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--surf);position:sticky;top:0;z-index:100;gap:10px;
+}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:.06em;white-space:nowrap}
+.logo span{color:var(--amber)}.logo em{color:var(--text);font-style:normal}
+.ws-badge{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);white-space:nowrap}
+.ws-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,214,143,.4)}50%{opacity:.6;box-shadow:0 0 0 5px rgba(0,214,143,0)}}
+.ws-dot.live{animation:pulse 1.5s infinite}
+
+/* ── Tab nav (mobile) ── */
+.tab-nav{
+  display:none;border-bottom:1px solid var(--bdr);
+  background:var(--surf);position:sticky;top:57px;z-index:90;
+}
+.tab-btn{
+  flex:1;padding:11px 4px;background:transparent;border:none;
+  border-bottom:2px solid transparent;color:var(--muted);
+  font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .2s;
+}
+.tab-btn.active{color:var(--amber);border-bottom-color:var(--amber)}
+
+/* ── CPU hero (mobile) ── */
+.cpu-hero{
+  display:none;background:var(--surf);border-bottom:1px solid var(--bdr);
+  padding:12px 16px;align-items:center;gap:14px;
+}
+.cpu-hero-val{font-family:'Bebas Neue',sans-serif;font-size:3.2rem;line-height:1;transition:color .3s}
+.minibars{flex:1;display:flex;align-items:flex-end;gap:2px;height:36px}
+.minibar{flex:1;border-radius:1px;transition:height .3s}
+.cpu-hero-stats{font-size:10px;text-align:right;line-height:1.8}
+
+/* ── Main layout ── */
+main{flex:1;padding:18px 20px;display:grid;grid-template-columns:270px 1fr;gap:14px;max-width:1360px;width:100%;margin:0 auto}
+
+/* ── Cards ── */
+.card{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:16px}
+.card-label{font-size:9px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.card-label::before{content:'▸';color:var(--amber-d)}
+
+/* ── Mode buttons ── */
+.mode-btn{
+  width:100%;padding:11px 13px;border:1px solid var(--bdr);border-radius:6px;
+  background:transparent;color:var(--muted);font-family:var(--mono);font-size:11px;
+  cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;transition:all .2s;
+}
+.mode-btn:hover{border-color:var(--cyan);color:var(--text)}
+.mode-btn.active-sim{border-color:var(--green);color:var(--green);background:rgba(0,214,143,.06)}
+.mode-btn.active-real{border-color:var(--cyan);color:var(--cyan);background:rgba(61,232,212,.06)}
+.mode-icon{font-size:14px;flex-shrink:0}
+.mode-title{font-weight:600;font-size:12px}
+.mode-sub{font-size:9px;color:var(--muted);margin-top:2px}
+
+/* ── Profile buttons ── */
+.profile-grid{display:flex;flex-direction:column;gap:7px}
+.profile-btn{
+  width:100%;padding:9px 11px;border:1px solid var(--bdr);border-radius:5px;
+  background:transparent;color:var(--muted);font-family:var(--mono);font-size:10px;
+  cursor:pointer;text-align:left;transition:all .2s;
+}
+.profile-btn:hover{border-color:var(--amber);color:var(--text)}
+.profile-btn.active{border-color:var(--amber);color:var(--amber);background:rgba(245,166,35,.06)}
+.profile-name{font-weight:600;font-size:11px;margin-bottom:2px}
+.profile-desc{font-size:9px;color:var(--muted);line-height:1.5}
+.profile-meta{font-size:9px;color:var(--amber-d);margin-top:3px}
+
+/* ── Stats ── */
+.stat-row{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--bdr);font-size:11px}
+.stat-row:last-child{border:none}
+.stat-val{font-size:17px;font-weight:700;color:var(--cyan)}
+
+/* ── CPU big ── */
+#cpu-big{font-family:'Bebas Neue',sans-serif;font-size:3.8rem;text-align:center;line-height:1;transition:color .3s;margin:6px 0 2px}
+#cpu-label{text-align:center;font-size:9px;color:var(--muted);letter-spacing:.12em}
+
+/* ── Chart ── */
+.chart-wrap{position:relative;height:90%}
+
+/* ── Integration ── */
+.int-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px}
+.int-card{background:var(--bg);border:1px solid var(--bdr);border-radius:6px;padding:11px 13px}
+.int-label{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.int-val{font-size:20px;font-weight:700;color:var(--amber)}
+.int-unit{font-size:8px;color:var(--muted);margin-top:3px}
+.int-formula{font-size:8px;color:var(--bdr2);margin-top:5px;line-height:1.4}
+
+/* ── Notice ── */
+.real-notice{
+  display:none;margin-top:10px;background:rgba(61,232,212,.05);
+  border:1px solid rgba(61,232,212,.2);border-radius:6px;
+  padding:10px 12px;font-size:10px;color:var(--cyan);line-height:1.7;
+}
+
+/* ── Action btn ── */
+.action-btn{
+  padding:5px 12px;background:transparent;border:1px solid var(--bdr);
+  border-radius:4px;color:var(--muted);font-family:var(--mono);font-size:10px;
+  cursor:pointer;transition:all .2s;
+}
+.action-btn:hover{border-color:var(--red);color:var(--red)}
+
+/* ── Left col ── */
+.left-col{display:flex;flex-direction:column;gap:12px}
+.right-col{display:flex;flex-direction:column;gap:12px}
+
+/* ── Footer ── */
+footer{border-top:1px solid var(--bdr);padding:10px 20px;display:flex;justify-content:space-between;background:var(--surf);font-size:10px;color:var(--muted);flex-wrap:wrap;gap:6px}
+
+/* ── Animations ── */
+@keyframes tabFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.tab-content{animation:tabFade .3s ease both}
+
+/* ════════════════════════════════════
+   RESPONSIVE — tablet
+════════════════════════════════════ */
+@media(max-width:900px){
+  main{grid-template-columns:1fr;padding:14px 16px}
+  .int-grid{grid-template-columns:1fr 1fr}
+}
+
+/* ════════════════════════════════════
+   RESPONSIVE — mobile
+════════════════════════════════════ */
+@media(max-width:640px){
+  header{padding:10px 14px}
+  .logo{font-size:1.2rem}
+  #ws-text{display:none}
+
+  /* Show mobile chrome */
+  .cpu-hero{display:flex}
+  .tab-nav{display:flex}
+
+  /* Hide desktop layout */
+  main{display:none}
+  footer{display:none}
+
+  /* Mobile content wrapper */
+  #mobile-content{display:flex;flex-direction:column;gap:12px;padding:14px 14px 20px;flex:1}
+
+  .int-grid{grid-template-columns:1fr 1fr}
+  .chart-wrap{height:220px}
+  .profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+
+  .int-card{padding:9px 10px}
+  .int-val{font-size:17px}
+}
+
+@media(max-width:400px){
+  .int-grid{grid-template-columns:1fr}
+  .profile-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo"><span>CPU</span><em>MONITOR</em></div>
+  <div class="ws-badge">
+    <div class="ws-dot" id="dot"></div>
+    <span id="ws-text">Conectando…</span>
+  </div>
+</header>
+
+<!-- ── Mobile CPU hero ── -->
+<div class="cpu-hero" id="cpu-hero">
+  <div class="cpu-hero-val" id="hero-val" style="color:var(--green)">--.-<span style="font-size:1.1rem">%</span></div>
+  <div class="minibars" id="minibars"></div>
+  <div class="cpu-hero-stats" id="hero-stats" style="color:var(--muted)">—</div>
+</div>
+
+<!-- ── Mobile tab nav ── -->
+<nav class="tab-nav" id="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('monitor',this)">Gráfica</button>
+  <button class="tab-btn" onclick="switchTab('control',this)">Control</button>
+  <button class="tab-btn" onclick="switchTab('integration',this)">∫ Integral</button>
+</nav>
+
+<!-- ── Mobile content ── -->
+<div id="mobile-content" style="display:none">
+  <div id="tab-monitor" class="tab-content">
+    <div class="card">
+      <div class="card-label">CPU(t) — tiempo real</div>
+      <div class="chart-wrap"><canvas id="cpu-chart-m"></canvas></div>
+    </div>
+    <div class="card" id="int-card-m">
+      <div class="card-label">∫ Integración</div>
+      <div class="int-grid">
+        <div class="int-card"><div class="int-label">Trapecio</div><div class="int-val" id="m-trap">—</div><div class="int-unit">CPU%·s</div></div>
+        <div class="int-card"><div class="int-label">Simpson 1/3</div><div class="int-val" id="m-simp" style="color:#f5a623">—</div><div class="int-unit">CPU%·s</div></div>
+        <div class="int-card"><div class="int-label">Tiempo / Pts</div><div class="int-val" id="m-time" style="color:var(--cyan);font-size:15px">—</div><div class="int-unit" id="m-pts">— lecturas</div></div>
+      </div>
+    </div>
+  </div>
+  <div id="tab-control" class="tab-content" style="display:none">
+    <div class="card">
+      <div class="card-label">Modo activo</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="mode-btn active-sim" id="m-btn-sim" onclick="setMode('simulated')">
+          <span class="mode-icon">🟢</span>
+          <div><div class="mode-title">Simulación</div><div class="mode-sub">CPU(t) = k · users(t)</div></div>
+        </button>
+        <button class="mode-btn" id="m-btn-real" onclick="setMode('real')">
+          <span class="mode-icon">🔵</span>
+          <div><div class="mode-title">Datos Reales</div><div class="mode-sub">psutil + carga real</div></div>
+        </button>
+      </div>
+      <div class="real-notice" id="m-real-notice">⚡ En modo real cada petición genera trabajo CPU genuino en el servidor.</div>
+    </div>
+    <div class="card" id="m-profile-panel">
+      <div class="card-label">Perfil de servidor</div>
+      <div class="profile-grid" id="m-profile-grid"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Estadísticas</div>
+      <div class="stat-row"><span>Peticiones</span><span class="stat-val" id="m-reqs">0</span></div>
+      <div class="stat-row"><span>Modo</span><span class="stat-val" id="m-mode" style="font-size:12px">SIM</span></div>
+      <div class="stat-row"><span>Buffer</span><span class="stat-val" id="m-pts2">0</span></div>
+    </div>
+    <button onclick="clearData()" style="width:100%;padding:10px;background:transparent;border:1px solid var(--bdr);border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">Limpiar buffer</button>
+  </div>
+  <div id="tab-integration" class="tab-content" style="display:none">
+    <div class="card">
+      <div class="card-label">∫ CPU(t) dt — Métodos numéricos</div>
+      <div class="int-grid" style="grid-template-columns:1fr">
+        <div class="int-card"><div class="int-label">Trapecio · O(h²)</div><div class="int-val" id="m-trap2">—</div><div class="int-unit">CPU% · segundos</div><div class="int-formula">(h/2)[f₀ + 2f₁ + … + fₙ]</div></div>
+        <div class="int-card"><div class="int-label">Simpson 1/3 · O(h⁴)</div><div class="int-val" id="m-simp2" style="color:var(--amber)">—</div><div class="int-unit">CPU% · segundos</div><div class="int-formula">(h/3)[f₀ + 4f₁ + 2f₂ + … + fₙ]</div></div>
+        <div class="int-card"><div class="int-label">Rango total</div><div class="int-val" id="m-time2" style="color:var(--cyan);font-size:16px">—</div><div class="int-unit" id="m-pts3">— lecturas procesadas</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     DESKTOP layout
+══════════════════════════════════ -->
+<main>
+  <!-- Left col -->
+  <div class="left-col">
+
+    <!-- CPU display -->
+    <div class="card">
+      <div class="card-label">CPU ahora</div>
+      <div id="cpu-big" style="color:var(--green)">--.-</div>
+      <div id="cpu-label">PERCENT CPU</div>
+    </div>
+
+    <!-- Mode -->
+    <div class="card">
+      <div class="card-label">Modo activo</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="mode-btn active-sim" id="btn-sim" onclick="setMode('simulated')">
+          <span class="mode-icon">🟢</span>
+          <div><div class="mode-title">Simulación</div><div class="mode-sub">CPU(t) = k · users(t)</div></div>
+        </button>
+        <button class="mode-btn" id="btn-real" onclick="setMode('real')">
+          <span class="mode-icon">🔵</span>
+          <div><div class="mode-title">Datos Reales</div><div class="mode-sub">psutil + carga real por petición</div></div>
+        </button>
+      </div>
+      <div class="real-notice" id="real-notice">⚡ En modo real, cada petición ejecuta trabajo computacional genuino — psutil detectará el aumento de CPU.</div>
+    </div>
+
+    <!-- Profile -->
+    <div class="card" id="profile-panel">
+      <div class="card-label">Perfil de servidor simulado</div>
+      <div class="profile-grid" id="profile-grid"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="card-label">Estadísticas</div>
+      <div class="stat-row"><span>Peticiones totales</span><span class="stat-val" id="st-reqs">0</span></div>
+      <div class="stat-row"><span>Modo</span><span class="stat-val" id="st-mode" style="font-size:12px">SIM</span></div>
+      <div class="stat-row"><span>Puntos buffer</span><span class="stat-val" id="st-pts">0</span></div>
+    </div>
+  </div>
+
+  <!-- Right col -->
+  <div class="right-col">
+
+    <!-- Chart -->
+    <div class="card" style="flex:1">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-label" style="margin:0">CPU(t) — tiempo real</div>
+        <button class="action-btn" onclick="clearData()">Limpiar</button>
+      </div>
+      <div class="chart-wrap"><canvas id="cpu-chart"></canvas></div>
+    </div>
+
+    <!-- Integration -->
+    <div class="card">
+      <div class="card-label">∫ CPU(t) dt — Integración numérica</div>
+      <div class="int-grid">
+        <div class="int-card">
+          <div class="int-label">Trapecio</div>
+          <div class="int-val" id="int-trap">—</div>
+          <div class="int-unit">CPU%·seg</div>
+          <div class="int-formula">(h/2)[f₀+2f₁+…+fₙ]</div>
+        </div>
+        <div class="int-card">
+          <div class="int-label">Simpson 1/3</div>
+          <div class="int-val" id="int-simp" style="color:var(--amber)">—</div>
+          <div class="int-unit">CPU%·seg</div>
+          <div class="int-formula">(h/3)[f₀+4f₁+2f₂+…+fₙ]</div>
+        </div>
+        <div class="int-card">
+          <div class="int-label">Rango / Puntos</div>
+          <div class="int-val" id="int-time" style="color:var(--cyan)">—</div>
+          <div class="int-unit" id="int-pts">— lecturas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>CPU Monitor · Dashboard de control</span>
+  <span>Trapecio · Simpson 1/3</span>
+</footer>
+
+<script>
+// ── Charts ────────────────────────────────────────────────────────────────────
+function makeChart(id) {
+  const ctx = document.getElementById(id)
+  if (!ctx) return null
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'CPU %', data: [], borderColor: '#00d68f', backgroundColor: 'rgba(0,214,143,.06)', borderWidth: 2, fill: true, tension: .4, pointRadius: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { ticks: { color: '#3d4a5c', maxTicksLimit: 6, font: { family: 'JetBrains Mono', size: 9 } }, grid: { color: '#1f2530' } },
+        y: { min: 0, max: 100, ticks: { color: '#3d4a5c', font: { family: 'JetBrains Mono', size: 9 }, callback: v => v + '%' }, grid: { color: '#1f2530' } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  })
+}
+
+const chartDesktop = makeChart('cpu-chart')
+const chartMobile  = makeChart('cpu-chart-m')
+const minibars = []
+const MINI_MAX = 20
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let mode = 'simulated'
+let profiles = {}
+let activeProfileName = ''
+let bufPts = 0
+let cpuHistory = []
+let activeTab = 'monitor'
+const isMobile = () => window.innerWidth <= 640
+
+// ── WS ───────────────────────────────────────────────────────────────────────
+const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+let ws
+
+function connectWS() {
+  ws = new WebSocket(`${proto}://${location.host}/ws`)
+  ws.onopen = () => {
+    document.getElementById('dot').classList.add('live')
+    document.getElementById('dot').style.background = '#00d68f'
+    const t = document.getElementById('ws-text')
+    if (t) t.textContent = 'Conectado'
+  }
+  ws.onclose = () => {
+    document.getElementById('dot').classList.remove('live')
+    document.getElementById('dot').style.background = '#ff4560'
+    const t = document.getElementById('ws-text')
+    if (t) t.textContent = 'Desconectado'
+    setTimeout(connectWS, 3000)
+  }
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data)
+    if (msg.type === 'init') {
+      mode = msg.mode
+      updateModeUI()
+      if (msg.buffer?.length) msg.buffer.forEach(pushPoint)
+      fetchProfiles()
+    }
+    if (msg.type === 'cpu_update') { pushPoint(msg.data); bufPts++; refreshStats(); refreshInt() }
+    if (msg.type === 'mode_change') { mode = msg.mode; updateModeUI() }
+    if (msg.type === 'profile_change') { activeProfileName = msg.profile.name; renderProfiles() }
+  }
+}
+
+// ── Push point ────────────────────────────────────────────────────────────────
+function pushPoint(p) {
+  const t = new Date(p.timestamp * 1000).toLocaleTimeString('es', { hour12: false })
+  const cpu = p.cpu_percent
+  cpuHistory.push(cpu)
+  if (cpuHistory.length > 60) cpuHistory.shift()
+
+  let col = '#00d68f'
+  if (cpu > 80) col = '#ff4560'; else if (cpu > 60) col = '#f5a623'; else if (cpu > 40) col = '#3de8d4'
+
+  // Desktop chart
+  if (chartDesktop) {
+    chartDesktop.data.labels.push(t); chartDesktop.data.datasets[0].data.push(cpu)
+    if (chartDesktop.data.labels.length > 60) { chartDesktop.data.labels.shift(); chartDesktop.data.datasets[0].data.shift() }
+    chartDesktop.data.datasets[0].borderColor = col; chartDesktop.data.datasets[0].backgroundColor = col + '10'
+    chartDesktop.update('none')
+  }
+
+  // Mobile chart
+  if (chartMobile) {
+    chartMobile.data.labels.push(t); chartMobile.data.datasets[0].data.push(cpu)
+    if (chartMobile.data.labels.length > 40) { chartMobile.data.labels.shift(); chartMobile.data.datasets[0].data.shift() }
+    chartMobile.data.datasets[0].borderColor = col; chartMobile.data.datasets[0].backgroundColor = col + '10'
+    chartMobile.update('none')
+  }
+
+  // Desktop big number
+  const big = document.getElementById('cpu-big')
+  if (big) { big.textContent = cpu.toFixed(1) + '%'; big.style.color = col }
+
+  // Mobile hero
+  updateHero(cpu, col)
+}
+
+function updateHero(cpu, col) {
+  const heroVal = document.getElementById('hero-val')
+  if (heroVal) { heroVal.innerHTML = cpu.toFixed(1) + '<span style="font-size:1rem">%</span>'; heroVal.style.color = col }
+
+  // Mini bars
+  const cont = document.getElementById('minibars')
+  if (cont && cpuHistory.length) {
+    const slice = cpuHistory.slice(-MINI_MAX)
+    cont.innerHTML = slice.map((v, i) => {
+      const h = Math.max(3, (v / 100) * 36)
+      let c = '#00d68f'
+      if (v > 80) c = '#ff4560'; else if (v > 60) c = '#f5a623'; else if (v > 40) c = '#3de8d4'
+      const op = 0.35 + (i / slice.length) * 0.65
+      return `<div class="minibar" style="height:${h}px;background:${c};opacity:${op.toFixed(2)}"></div>`
+    }).join('')
+  }
+
+  // Hero stats
+  if (cpuHistory.length) {
+    const mn = Math.min(...cpuHistory).toFixed(1)
+    const mx = Math.max(...cpuHistory).toFixed(1)
+    const av = (cpuHistory.reduce((a,b)=>a+b,0)/cpuHistory.length).toFixed(1)
+    const s = document.getElementById('hero-stats')
+    if (s) s.innerHTML = `<span style="color:#00d68f">↓${mn}%</span><br><span style="color:#ff4560">↑${mx}%</span><br><span style="color:#f5a623">⌀${av}%</span>`
+  }
+}
+
+// ── Integration ───────────────────────────────────────────────────────────────
+async function refreshInt() {
+  try {
+    const d = await fetch('/metrics').then(r => r.json())
+    if (!d.integration) return
+    const tr = d.integration.trapezoid.value
+    const si = d.integration.simpson.value
+    const tm = d.integration.simpson.time_range + 's'
+    const pt = d.integration.simpson.n_points + ' lecturas'
+
+    const ids = [
+      ['int-trap', tr], ['int-simp', si], ['int-time', tm], ['int-pts', pt],
+      ['m-trap', tr],   ['m-simp', si],   ['m-time', tm],   ['m-pts', pt],
+      ['m-trap2', tr],  ['m-simp2', si],  ['m-time2', tm],  ['m-pts3', pt],
+    ]
+    ids.forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val })
+  } catch(e) {}
+}
+
+// ── Stats refresh ─────────────────────────────────────────────────────────────
+function refreshStats() {
+  ['st-pts','m-pts2'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = bufPts })
+}
+
+// ── Mode ──────────────────────────────────────────────────────────────────────
+async function setMode(m) {
+  await fetch('/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: m }) })
+}
+
+function updateModeUI() {
+  const isReal = mode === 'real'
+  const pairs = [['btn-sim','m-btn-sim'],['btn-real','m-btn-real']]
+  pairs.forEach(([d, mob]) => {
+    const de = document.getElementById(d); const me = document.getElementById(mob)
+    if (de) de.className = 'mode-btn' + (d.includes('sim') ? (mode==='simulated'?' active-sim':'') : (isReal?' active-real':''))
+    if (me) me.className = 'mode-btn' + (mob.includes('sim') ? (mode==='simulated'?' active-sim':'') : (isReal?' active-real':''))
+  })
+  ;['st-mode','m-mode'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = isReal ? 'REAL' : 'SIM' })
+  ;['profile-panel','m-profile-panel'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isReal ? 'none' : 'block' })
+  ;['real-notice','m-real-notice'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isReal ? 'block' : 'none' })
+}
+
+// ── Profiles ──────────────────────────────────────────────────────────────────
+async function fetchProfiles() {
+  try {
+    const d = await fetch('/profiles').then(r => r.json())
+    profiles = d.profiles; activeProfileName = d.active.name
+    renderProfiles()
+  } catch(e) {}
+}
+
+function profileHTML(key, p) {
+  return `
+    <button class="profile-btn ${p.name === activeProfileName ? 'active' : ''}" onclick="setProfile('${key}')">
+      <div class="profile-name">${p.name}</div>
+      <div class="profile-desc">${p.description}</div>
+      <div class="profile-meta">k=${p.k_factor} · ${p.cores} cores · ${p.ram_gb}GB RAM</div>
+    </button>`
+}
+
+function renderProfiles() {
+  const html = Object.entries(profiles).map(([k,p]) => profileHTML(k,p)).join('')
+  ;['profile-grid','m-profile-grid'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html })
+}
+
+async function setProfile(key) {
+  await fetch('/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: key }) })
+  fetchProfiles()
+}
+
+// ── Clear ─────────────────────────────────────────────────────────────────────
+async function clearData() {
+  await fetch('/clear', { method: 'POST' })
+  cpuHistory = []; bufPts = 0
+  ;[chartDesktop, chartMobile].forEach(c => { if(c){c.data.labels=[];c.data.datasets[0].data=[];c.update()} })
+  ;['int-trap','int-simp','int-time','m-trap','m-simp','m-time','m-trap2','m-simp2','m-time2'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—'})
+  ;['int-pts','m-pts','m-pts3'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='— lecturas'})
+  ;['st-pts','m-pts2'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='0'})
+}
+
+// ── Mobile tab switching ───────────────────────────────────────────────────────
+function switchTab(tab, btn) {
+  activeTab = tab
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  ;['monitor','control','integration'].forEach(t => {
+    const el = document.getElementById('tab-' + t)
+    if (el) { el.style.display = t === tab ? 'block' : 'none'; if (t === tab) { el.style.animation='none'; el.offsetHeight; el.style.animation='tabFade .3s ease' } }
+  })
+  if (tab === 'monitor' && chartMobile) setTimeout(() => chartMobile.resize(), 50)
+}
+
+// ── Responsive show/hide ───────────────────────────────────────────────────────
+function handleResize() {
+  const mob = isMobile()
+  document.getElementById('mobile-content').style.display = mob ? 'flex' : 'none'
+  document.getElementById('cpu-hero').style.display = mob ? 'flex' : 'none'
+  document.getElementById('tab-nav').style.display = mob ? 'flex' : 'none'
+  // main and footer handled by CSS media query
+  if (mob && chartMobile) chartMobile.resize()
+  if (!mob && chartDesktop) chartDesktop.resize()
+}
+
+window.addEventListener('resize', handleResize)
+handleResize()
+connectWS()
+</script>
+</body>
+</html>
